@@ -10,22 +10,22 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repo
+      - name: ✅ Checkout repo
         uses: actions/checkout@v3
 
-      - name: Upload DAGs to S3
+      - name: ✅ Upload DAGs to S3
         uses: jakejarvis/s3-sync-action@master
         with:
           args: --delete
         env:
-          AWS_S3_BUCKET: rocket-launches-airflow
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_S3_BUCKET: rocket-launches-airflow       # ✅ MWAA S3 bucket name
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}   # 🔐 Set in GitHub Secrets
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_REGION: eu-north-1
           SOURCE_DIR: "dags"
           DEST_DIR: "dags"
 
-      - name: Upload Plugins to S3
+      - name: ✅ Upload Plugins to S3 (optional)
         uses: jakejarvis/s3-sync-action@master
         with:
           args: --delete
@@ -37,7 +37,7 @@ jobs:
           SOURCE_DIR: "plugins"
           DEST_DIR: "plugins"
 
-      - name: Upload requirements.txt to S3  
+      - name: ✅ Upload requirements.txt to S3 (optional)
         run: |
           aws s3 cp requirements.txt s3://rocket-launches-airflow/requirements.txt
         env:
