@@ -145,7 +145,7 @@ def _move_proccessed_data(**context):
     prefix="raw_data/to_processed/"
     target_prefix="raw_data/processed/"
 
-    keys=s3_hook.lists(bucket_name=bucket_name,prefix=prefix)
+    keys=s3_hook.list_keys(bucket_name=bucket_name,prefix=prefix)
     for key in keys:
         if key.endswith(".json"):
             new_key=key.replace(prefix,target_prefix)
@@ -156,7 +156,9 @@ def _move_proccessed_data(**context):
                 dest_bucket_name=bucket_name
                 
             )
-            s3_hook.delete_object(bucket=bucket_name,key=key)
+        s3_hook.delete_objects(bucket=bucket_name, keys=[key])
+
+            
 
 # DAG definition
 with DAG(
@@ -248,5 +250,4 @@ process_songs >> store_songs_to_s3
 store_album_to_s3 >> move_proccessed_data
 store_artist_to_s3 >> move_proccessed_data
 store_songs_to_s3 >> move_proccessed_data
-
 
