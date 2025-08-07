@@ -1,1 +1,4 @@
+spotipy
+pandas
+boto3
 
