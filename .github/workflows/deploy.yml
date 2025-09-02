@@ -18,10 +18,10 @@ jobs:
         with:
           args: --delete
         env:
-          AWS_S3_BUCKET: rocket-launches-airflow       # ✅ MWAA S3 bucket name
+          AWS_S3_BUCKET: apche-airflow-mwaa-s3      # ✅ MWAA S3 bucket name
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}   # 🔐 Set in GitHub Secrets
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_REGION: eu-north-1
+          AWS_REGION: ap-southeast-2
           SOURCE_DIR: "dags"
           DEST_DIR: "dags"
 
@@ -30,17 +30,17 @@ jobs:
         with:
           args: --delete
         env:
-          AWS_S3_BUCKET: rocket-launches-airflow
+          AWS_S3_BUCKET: apche-airflow-mwaa-s3 
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_REGION: eu-north-1
+          AWS_REGION: ap-southeast-2
           SOURCE_DIR: "plugins"
           DEST_DIR: "plugins"
 
       - name: ✅ Upload requirements.txt to S3 (optional)
         run: |
-          aws s3 cp requirements.txt s3://rocket-launches-airflow/requirements.txt
+          aws s3 cp requirements.txt s3://apche-airflow-mwaa-s3/requerements/
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_REGION: eu-north-1
+          AWS_REGION: ap-southeast-2
