@@ -1,6 +1,8 @@
 from airflow import DAG
 from airflow.utils.dates import days_ago
 from airflow.sensors.external_task import ExternalTaskSensor
+# For MWAA environments with provider 4.x
+from airflow.providers.amazon.aws.operators.glue_crawler import GlueJobOperator
 
 from airflow.providers.amazon.aws.operators.glue import AwsGlueJobOperator
 
@@ -63,7 +65,7 @@ with DAG(
     )
 
     # Step 1: User data extraction
-    glue_user_extract = AwsGlueJobOperator(
+    glue_user_extract = GlueJobOperator(
         task_id='glue_user_extract',
         job_name='RealMart-user_data_extract',
         iam_role_name='realmart-iam-role',
@@ -72,7 +74,7 @@ with DAG(
     )
 
     # Step 2: Product data processing
-    glue_product_data = AwsGlueJobOperator(
+    glue_product_data = GlueJobOperator(
         task_id='glue_product_data',
         job_name='Realmart-product_data_store',
         iam_role_name='realmart-iam-role',
@@ -81,7 +83,7 @@ with DAG(
     )
 
     # Step 3: Cart clean data processing
-    glue_cart_clean = AwsGlueJobOperator(
+    glue_cart_clean = GlueJobOperator(
         task_id='glue_cart_clean',
         job_name='Realmart-cart_clean_data_Store',
         iam_role_name='realmart-iam-role',
