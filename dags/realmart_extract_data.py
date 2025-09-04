@@ -1,14 +1,14 @@
 from airflow import DAG
 from airflow.operators.python import PythonOperator
+from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 from datetime import datetime, timedelta
+import requests
 import json
 import logging
 import boto3
-import requests
-from botocore.exceptions import ClientError, NoCredentialsError, EndpointConnectionError
 
 # --------------------------
-# CONFIGURATION
+# CONFIG
 # --------------------------
 ENDPOINTS = {
     "products": "https://fakestoreapi.com/products",
@@ -19,62 +19,12 @@ ENDPOINTS = {
 BUCKET_NAME = "realmart-backbone"
 RAW_PREFIX = "raw_data/to_processed"
 
-# --------------------------
-# LOGGING SETUP
-# --------------------------
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s"
 )
 logger = logging.getLogger()
 
-# --------------------------
-# FETCH DATA FROM API USING REQUESTS
-# --------------------------
-def fetch_and_upload(dataset_name, api_url):
-    try:
-        logger.info(f"Fetching {dataset_name} from {api_url}")
-        response = requests.get(
-            api_url,
-            headers={
-                "User-Agent": "Mozilla/5.0 (compatible; Airflow DAG)",
-                "Accept": "application/json"
-            },
-            timeout=30
-        )
-        # Gracefully handle non-200 status
-        if response.status_code != 200:
-            logger.warning(f"Request error for {dataset_name}: {response.status_code} {response.reason}")
-            return  # skip dataset without failing DAG
-
-        data = response.json()
-        if not isinstance(data, list):
-            logger.warning(f"{dataset_name} API did not return a list, skipping")
-            return
-
-        logger.info(f"Fetched {len(data)} {dataset_name} records")
-
-        # Upload to S3
-        now = datetime.utcnow()
-        file_name = f"{dataset_name}_{now.strftime('%Y%m%d_%H%M%S')}.json"
-        s3_key = f"{RAW_PREFIX}/{dataset_name}/{file_name}"
-
-        s3 = boto3.client("s3")
-        s3.put_object(
-            Bucket=BUCKET_NAME,
-            Key=s3_key,
-            Body=json.dumps(data, indent=2),
-            ContentType="application/json"
-        )
-        logger.info(f"Uploaded {len(data)} {dataset_name} records to s3://{BUCKET_NAME}/{s3_key}")
-
-    except (requests.RequestException, ClientError, NoCredentialsError, EndpointConnectionError, Exception) as e:
-        logger.error(f"Error processing {dataset_name}: {e}")
-        # Do not raise, continue with next dataset
-
-# --------------------------
-# DEFAULT ARGS
-# --------------------------
 default_args = {
     "owner": "airflow",
     "depends_on_past": False,
@@ -83,6 +33,33 @@ default_args = {
     "start_date": datetime(2025, 9, 1),
     "catchup": False
 }
+
+# --------------------------
+# FUNCTION TO FETCH & UPLOAD
+# --------------------------
+def fetch_and_upload(dataset_name, api_url, **kwargs):
+    try:
+        logger.info(f"Fetching {dataset_name} from {api_url}")
+        response = requests.get(api_url, headers={"User-Agent": "Airflow DAG", "Accept": "application/json"})
+        if response.status_code != 200:
+            logger.warning(f"Request error for {dataset_name}: {response.status_code} {response.reason}")
+            return  # gracefully handle error without failing DAG
+
+        data = response.json()
+        if not isinstance(data, list):
+            logger.warning(f"{dataset_name} API did not return a list")
+            return
+
+        now = datetime.utcnow()
+        file_name = f"{dataset_name}_{now.strftime('%Y%m%d_%H%M%S')}.json"
+        s3_key = f"{RAW_PREFIX}/{dataset_name}/{file_name}"
+
+        s3 = boto3.client("s3")
+        s3.put_object(Bucket=BUCKET_NAME, Key=s3_key, Body=json.dumps(data, indent=2), ContentType="application/json")
+        logger.info(f"Uploaded {dataset_name} data to s3://{BUCKET_NAME}/{s3_key}")
+
+    except Exception as e:
+        logger.error(f"Error processing {dataset_name}: {e}")
 
 # --------------------------
 # DAG DEFINITION
@@ -100,9 +77,16 @@ with DAG(
         task = PythonOperator(
             task_id=f"ingest_{dataset_name}",
             python_callable=fetch_and_upload,
-            op_args=[dataset_name, api_url],
+            op_args=[dataset_name, api_url]
         )
         tasks.append(task)
 
-    # Parallel execution
-    tasks
+    # Trigger next DAG automatically after all datasets are ingested
+    trigger_glue_dag = TriggerDagRunOperator(
+        task_id="trigger_glue_dag",
+        trigger_dag_id="fakestore_glue_processing_dag",  # replace with your second DAG id
+        wait_for_completion=False
+    )
+
+    # Set dependencies
+    tasks >> trigger_glue_dag
