@@ -56,7 +56,7 @@ def fetch_and_upload(dataset_name, api_url):
 
         # Upload to S3
         now = datetime.utcnow()
-        file_name = f"{dataset_name}_{now.strftime('%Y%m%d_%H%M%S')}.json"
+        file_name = f"{dataset_name}_{now.strftime('%Y%m%d_%H%M%S')}.csv"
         s3_key = f"{RAW_PREFIX}/{dataset_name}/{file_name}"
 
         s3 = boto3.client("s3")
