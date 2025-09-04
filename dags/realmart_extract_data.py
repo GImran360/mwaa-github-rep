@@ -49,8 +49,8 @@ def fetch_and_upload(dataset_name, api_url):
                 "Accept": "application/json"
             },
             auth_payload = {
-        "username": "your_username",
-        "password": "your_password"
+        "username": "String",
+        "password": "String"
     }
         )
         if response.status != 200:
