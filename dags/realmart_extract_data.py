@@ -1,10 +1,12 @@
-from airflow import DAG
-from airflow.operators.python import PythonOperator
-from datetime import datetime, timedelta
+import csv
+import io
 import json
 import urllib3
 import logging
 import boto3
+from airflow import DAG
+from airflow.operators.python import PythonOperator
+from datetime import datetime, timedelta
 from botocore.exceptions import ClientError, NoCredentialsError, EndpointConnectionError
 
 # --------------------------
@@ -54,28 +56,29 @@ def fetch_and_upload(dataset_name, api_url):
 
         logger.info(f"Fetched {len(data)} {dataset_name} records")
 
+        # --------------------------
+        # Convert JSON → CSV
+        # --------------------------
+        try:
+            if len(data) == 0:
+                raise ValueError(f"No data to save for {dataset_name}")
+
+            output = io.StringIO()
+            writer = csv.DictWriter(output, fieldnames=data[0].keys())
+            writer.writeheader()
+            writer.writerows(data)
+            csv_data = output.getvalue()
+        except Exception as e:
+            logger.error(f"Failed to convert {dataset_name} JSON to CSV: {e}")
+            raise
+
+        # --------------------------
         # Upload to S3
+        # --------------------------
         now = datetime.utcnow()
         file_name = f"{dataset_name}_{now.strftime('%Y%m%d_%H%M%S')}.csv"
         s3_key = f"{RAW_PREFIX}/{dataset_name}/{file_name}"
-        
-    
-    try: 
-        #Deveoper Name :Imran
-         # Added try block to convert JSON to CSV (09/04/2025)
-        #convert json (list of dict ) to csv
-        if len(data)==0:
-            raise ValueError(f"No data to save for {dataset_name}")
-        output=io.StringIO()
-        writer=csv.DictWriter(output,fieldnames=data[0].keys())
-        writer.writerheader()
-        writer.writerows(data)
-        csv_data=ouput.getvalue()
-    except Exception as e:
-        logger.error(f"failed to convert {dataset_name} json to csv :{e}")
-        raise 
-        
-        #upload to s3
+
         s3 = boto3.client("s3")
         s3.put_object(
             Bucket=BUCKET_NAME,
@@ -85,6 +88,7 @@ def fetch_and_upload(dataset_name, api_url):
         )
         logger.info(f"Uploaded {len(data)} {dataset_name} records to s3://{BUCKET_NAME}/{s3_key}")
         return s3_key
+
     except (ClientError, NoCredentialsError, EndpointConnectionError, Exception) as e:
         logger.error(f"Error processing {dataset_name}: {e}")
         raise
@@ -121,5 +125,4 @@ with DAG(
         )
         tasks.append(task)
 
-    # simple parallel execution
     tasks
