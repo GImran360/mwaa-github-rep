@@ -47,7 +47,11 @@ def fetch_and_upload(dataset_name, api_url):
             headers={
                 "User-Agent": "Mozilla/5.0 (compatible; Airflow DAG)",
                 "Accept": "application/json"
-            }
+            },
+            auth_payload = {
+        "username": "your_username",
+        "password": "your_password"
+    }
         )
         if response.status != 200:
             raise Exception(f"API returned status {response.status} for {dataset_name}")
