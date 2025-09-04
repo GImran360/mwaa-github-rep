@@ -113,9 +113,13 @@ with DAG(
     dag_id="fakestore_ingestion_dag",
     default_args=default_args,
     description="Ingest products, carts, and users from Fakestore API into S3",
-    schedule_interval="0 1 * * *",  # run daily at 1 AM
+    schedule_interval=None,  # manual trigger only
+    start_date=days_ago(1),
+    catchup=False,
     tags=["fakestore", "s3", "ingestion"],
-) as dag:
+ ) as dag:
+
+
 
     tasks = []
     for dataset_name, api_url in ENDPOINTS.items():
