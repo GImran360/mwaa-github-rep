@@ -73,6 +73,7 @@ def fetch_and_upload(dataset_name, api_url):
         csv_data=ouput.getvalue()
     except Exception as e:
         logger.error(f"failed to convert {dataset_name} json to csv :{e}")
+        raise 
         
         #upload to s3
         s3 = boto3.client("s3")
