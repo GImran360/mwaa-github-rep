@@ -64,7 +64,7 @@ def fetch_and_upload(dataset_name, api_url):
             Bucket=BUCKET_NAME,
             Key=s3_key,
             Body=json.dumps(data, indent=2),
-            ContentType="application/json"
+            ContentType="application/csv"
         )
         logger.info(f"Uploaded {len(data)} {dataset_name} records to s3://{BUCKET_NAME}/{s3_key}")
 
