@@ -58,16 +58,29 @@ def fetch_and_upload(dataset_name, api_url):
         now = datetime.utcnow()
         file_name = f"{dataset_name}_{now.strftime('%Y%m%d_%H%M%S')}.csv"
         s3_key = f"{RAW_PREFIX}/{dataset_name}/{file_name}"
-
+        
+    
+    try: 
+        #Deveoper Name :Imran
+         # Added try block to convert JSON to CSV (09/04/2025)
+        #convert json (list of dict ) to csv
+        if len(data)==0:
+            raise ValueError(f"No data to save for {dataset_name}")
+        output=io.StringIO()
+        writer=csv.DictWriter(output,fieldnames=data[0].keys())
+        writer.writerheader()
+        writer.writerows(data)
+        csv_data=ouput.getvalue()
+        #upload to s3
         s3 = boto3.client("s3")
         s3.put_object(
             Bucket=BUCKET_NAME,
             Key=s3_key,
-            Body=json.dumps(data, indent=2),
-            ContentType="application/csv"
+            Body=csv_data,
+            ContentType="text/csv"
         )
         logger.info(f"Uploaded {len(data)} {dataset_name} records to s3://{BUCKET_NAME}/{s3_key}")
-
+        return s3_key
     except (ClientError, NoCredentialsError, EndpointConnectionError, Exception) as e:
         logger.error(f"Error processing {dataset_name}: {e}")
         raise
