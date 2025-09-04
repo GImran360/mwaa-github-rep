@@ -1,16 +1,11 @@
 from airflow import DAG
 from airflow.utils.dates import days_ago
 from airflow.sensors.external_task import ExternalTaskSensor
-# For MWAA environments with provider 4.x
-from airflow.providers.amazon.aws.operators.glue_crawler import GlueJobOperator
-
-from airflow.providers.amazon.aws.operators.glue import AwsGlueJobOperator
-
-from airflow.operators.python import BranchPythonOperator
+from airflow.operators.python import PythonOperator, BranchPythonOperator
 from airflow.operators.empty import EmptyOperator
 from airflow.operators.email import EmailOperator
 import datetime
-
+import boto3
 
 # Define holidays
 HOLIDAYS = [
@@ -28,11 +23,19 @@ default_args = {
     'email': ['your-email@example.com']
 }
 
+# Holiday check function
 def check_holiday(**kwargs):
     today = datetime.date.today()
     if today in HOLIDAYS:
         return 'skip_task'
     return 'wait_for_mart_extract'
+
+# Function to trigger Glue jobs using boto3
+def run_glue_job(job_name, region_name='ap-southeast-2', **kwargs):
+    client = boto3.client('glue', region_name=region_name)
+    response = client.start_job_run(JobName=job_name)
+    print(f"Started Glue job {job_name}: {response}")
+    return response['JobRunId']
 
 with DAG(
     dag_id="fakestore_ingestion_dag",
@@ -65,30 +68,24 @@ with DAG(
     )
 
     # Step 1: User data extraction
-    glue_user_extract = GlueJobOperator(
+    glue_user_extract = PythonOperator(
         task_id='glue_user_extract',
-        job_name='RealMart-user_data_extract',
-        iam_role_name='realmart-iam-role',
-        region_name='ap-southeast-2',
-        script_location='s3://aws-glue-assets-258208867389-ap-southeast-2/scripts/Real-mart-user_data_extract.py'
+        python_callable=run_glue_job,
+        op_args=['RealMart-user_data_extract']
     )
 
     # Step 2: Product data processing
-    glue_product_data = GlueJobOperator(
+    glue_product_data = PythonOperator(
         task_id='glue_product_data',
-        job_name='Realmart-product_data_store',
-        iam_role_name='realmart-iam-role',
-        region_name='ap-southeast-2',
-        script_location='s3://aws-glue-assets-258208867389-ap-southeast-2/scripts/Realmart-Store.py'
+        python_callable=run_glue_job,
+        op_args=['Realmart-product_data_store']
     )
 
     # Step 3: Cart clean data processing
-    glue_cart_clean = GlueJobOperator(
+    glue_cart_clean = PythonOperator(
         task_id='glue_cart_clean',
-        job_name='Realmart-cart_clean_data_Store',
-        iam_role_name='realmart-iam-role',
-        region_name='ap-southeast-2',
-        script_location='s3://aws-glue-assets-258208867389-ap-southeast-2/scripts/Realmart-cart_clean_data_Store.py'
+        python_callable=run_glue_job,
+        op_args=['Realmart-cart_clean_data_Store']
     )
 
     # Email on success
