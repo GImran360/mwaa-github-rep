@@ -1,38 +1,3 @@
-from airflow import DAG
-from airflow.operators.python import PythonOperator
-from datetime import datetime, timedelta
-import json
-import urllib3
-import logging
-import boto3
-from botocore.exceptions import ClientError, NoCredentialsError, EndpointConnectionError
-
-# --------------------------
-# CONFIGURATION
-# --------------------------
-ENDPOINTS = {
-    "products": "https://fakestoreapi.com/products",
-    "carts": "https://fakestoreapi.com/carts",
-    "users": "https://fakestoreapi.com/users",
-}
-
-BUCKET_NAME = "realmart-backbone"
-RAW_PREFIX = "raw_data/to_processed"
-
-# --------------------------
-# LOGGING SETUP
-# --------------------------
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(message)s"
-)
-logger = logging.getLogger()
-
-http = urllib3.PoolManager()
-
-# --------------------------
-# FETCH DATA FROM API
-# --------------------------
 def fetch_and_upload(dataset_name, api_url):
     try:
         logger.info(f"Fetching {dataset_name} from {api_url}")
@@ -40,11 +5,11 @@ def fetch_and_upload(dataset_name, api_url):
         # Step 1: Authenticate
         auth_url = "https://fakestoreapi.com/auth/login"
         auth_payload = json.dumps({
-            "username": 'String',
-            "password": 'String'
+            "username": "String",
+            "password": "String"
         })
         auth_response = http.request(
-            "POST",
+            "GET",
             auth_url,
             body=auth_payload,
             headers={"Content-Type": "application/json"}
