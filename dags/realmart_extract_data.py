@@ -9,6 +9,7 @@ from airflow.operators.python import PythonOperator
 from datetime import datetime, timedelta
 from botocore.exceptions import ClientError, NoCredentialsError, EndpointConnectionError
 
+
 # --------------------------
 # CONFIGURATION (fixed values)
 # --------------------------
