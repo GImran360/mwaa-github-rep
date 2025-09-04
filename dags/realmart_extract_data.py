@@ -7,6 +7,8 @@ import boto3
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 from datetime import datetime, timedelta
+from airflow.utils.dates import days_ago
+
 from botocore.exceptions import ClientError, NoCredentialsError, EndpointConnectionError
 
 
