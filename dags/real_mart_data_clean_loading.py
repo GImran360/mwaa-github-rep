@@ -9,6 +9,7 @@ from airflow.operators.empty import EmptyOperator
 from airflow.operators.email import EmailOperator
 import datetime
 
+
 # Define holidays
 HOLIDAYS = [
     datetime.date(2025, 1, 1),
