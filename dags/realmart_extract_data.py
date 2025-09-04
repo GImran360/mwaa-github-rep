@@ -3,8 +3,9 @@ from airflow.operators.bash import BashOperator
 from airflow.operators.python import PythonOperator
 from datetime import datetime, timedelta
 import boto3
-import pandas as pd
 import json
+import csv
+from io import StringIO
 import logging
 
 # --------------------------
@@ -35,22 +36,30 @@ def upload_csv_to_s3(file_path, dataset_name):
         with open(file_path, "r") as f:
             data = json.load(f)
 
-        # Convert list of dicts to DataFrame
-        df = pd.json_normalize(data)
+        if not isinstance(data, list) or len(data) == 0:
+            logger.warning(f"No data found for {dataset_name}, skipping upload.")
+            return
 
+        # Determine CSV headers from the first record
+        headers = list(data[0].keys())
+
+        # Convert JSON to CSV in-memory
+        csv_buffer = StringIO()
+        writer = csv.DictWriter(csv_buffer, fieldnames=headers)
+        writer.writeheader()
+        for row in data:
+            writer.writerow(row)
+
+        # Upload to S3
         now = datetime.utcnow()
         file_name = f"{dataset_name}_{now.strftime('%Y%m%d_%H%M%S')}.csv"
         s3_key = f"{RAW_PREFIX}/{dataset_name}/{file_name}"
 
-        # Save CSV to memory buffer
-        csv_buffer = df.to_csv(index=False)
-
-        # Upload to S3
         s3 = boto3.client("s3")
         s3.put_object(
             Bucket=BUCKET_NAME,
             Key=s3_key,
-            Body=csv_buffer,
+            Body=csv_buffer.getvalue(),
             ContentType="text/csv"
         )
         logger.info(f"Uploaded {dataset_name} CSV to s3://{BUCKET_NAME}/{s3_key}")
