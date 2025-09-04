@@ -1,108 +1,89 @@
-
 from airflow import DAG
-from airflow.utils.dates import days_ago
-from airflow.sensors.external_task import ExternalTaskSensor
-from airflow.operators.python import PythonOperator, BranchPythonOperator
+from airflow.operators.python import PythonOperator
 from airflow.operators.empty import EmptyOperator
-from airflow.operators.email import EmailOperator
-import datetime
+from airflow.utils.dates import days_ago
 import boto3
+import datetime
+import logging
+from botocore.exceptions import ClientError
 
 # --------------------------
-# HOLIDAYS
+# CONFIGURATION
 # --------------------------
-HOLIDAYS = [
-    datetime.date(2025, 1, 1),
-    datetime.date(2025, 12, 25),
-    datetime.date(2025, 5, 23),
-]
+SCRIPTS = {
+    "glue_user_extract": "s3://aws-glue-assets-258208867389-ap-southeast-2/scripts/Real-mart-user_data_extract.py",
+    "glue_product_data": "s3://aws-glue-assets-258208867389-ap-southeast-2/scripts/Realmart-Store.py",
+    "glue_cart_clean": "s3://aws-glue-assets-258208867389-ap-southeast-2/scripts/Realmart-cart_clean_data_Store.py"
+}
 
-# --------------------------
-# DEFAULT ARGS
-# --------------------------
+REGION_NAME = "ap-southeast-2"
+
 default_args = {
     'owner': 'airflow',
     'depends_on_past': False,
-    'email_on_failure': True,
-    'email_on_retry': False,
     'retries': 1,
-    'email': ['gandooriimran360@gmail.com']
 }
 
-# --------------------------
-# FUNCTIONS
-# --------------------------
-def check_holiday(**kwargs):
-    today = datetime.date.today()
-    if today in HOLIDAYS:
-        return 'skip_task'
-    return 'wait_for_fakestore_ingestion'
+logger = logging.getLogger()
+logging.basicConfig(level=logging.INFO)
 
-def run_glue_job(job_name, region_name='ap-southeast-2', **kwargs):
-    client = boto3.client('glue', region_name=region_name)
-    response = client.start_job_run(JobName=job_name)
-    print(f"Started Glue job {job_name}: {response}")
+
+def run_glue_job_from_s3(task_name, s3_script_path, **kwargs):
+    """
+    Creates (if not exists) and starts a Glue job based on S3 script location.
+    """
+    client = boto3.client("glue", region_name=REGION_NAME)
+
+    # Generate a Glue job name dynamically
+    glue_job_name = task_name
+
+    # Check if job exists
+    try:
+        client.get_job(JobName=glue_job_name)
+        logger.info(f"Glue job {glue_job_name} exists, starting it...")
+    except client.exceptions.EntityNotFoundException:
+        logger.info(f"Glue job {glue_job_name} does not exist, creating it...")
+        # Create job dynamically
+        client.create_job(
+            Name=glue_job_name,
+            Role="AWSGlueServiceRole",  # Replace with your Glue IAM role
+            Command={
+                "Name": "glueetl",
+                "ScriptLocation": s3_script_path,
+                "PythonVersion": "3"
+            },
+            MaxRetries=0,
+            GlueVersion="3.0",
+            NumberOfWorkers=2,
+            WorkerType="Standard"
+        )
+        logger.info(f"Created Glue job {glue_job_name}")
+
+    # Start Glue job
+    response = client.start_job_run(JobName=glue_job_name)
+    logger.info(f"Started Glue job {glue_job_name}, JobRunId: {response['JobRunId']}")
     return response['JobRunId']
 
-# --------------------------
-# DAG DEFINITION
-# --------------------------
+
 with DAG(
     dag_id="fakestore_glue_processing_dag",
     default_args=default_args,
-    description="Trigger Glue jobs after fakestore_ingestion_requests_dag",
-    schedule_interval=None,  # Triggered by sensor
-    start_date=days_ago(1),
-    catchup=False,
-    tags=["fakestore", "glue", "s3"]
+    description="Run Glue jobs from S3 scripts",
+    schedule_interval=None,
+    start_date=days_ago(0),
+    catchup=False
 ) as dag:
 
-    # Branch based on holiday
-    holiday_check = BranchPythonOperator(
-        task_id='holiday_check',
-        python_callable=check_holiday
-    )
+    tasks = []
+    for task_name, s3_script in SCRIPTS.items():
+        t = PythonOperator(
+            task_id=task_name,
+            python_callable=run_glue_job_from_s3,
+            op_args=[task_name, s3_script]
+        )
+        tasks.append(t)
 
-    skip_task = EmptyOperator(task_id='skip_task')
+    # Optional linear flow
+    for i in range(len(tasks)-1):
+        tasks[i] >> tasks[i+1]
 
-    # Wait for first DAG to complete
-    wait_for_fakestore_ingestion = ExternalTaskSensor(
-        task_id='wait_for_fakestore_ingestion',
-        external_dag_id='fakestore_ingestion_requests_dag',
-        external_task_id=None,  # Wait for entire DAG
-        poke_interval=60,
-        timeout=3600,
-        mode='poke'
-    )
-
-    # Glue jobs sequentially
-    glue_user_extract = PythonOperator(
-        task_id='glue_user_extract',
-        python_callable=run_glue_job,
-        op_args=['RealMart-user_data_extract']
-    )
-
-    glue_product_data = PythonOperator(
-        task_id='glue_product_data',
-        python_callable=run_glue_job,
-        op_args=['Realmart-product_data_store']
-    )
-
-    glue_cart_clean = PythonOperator(
-        task_id='glue_cart_clean',
-        python_callable=run_glue_job,
-        op_args=['Realmart-cart_clean_data_Store']
-    )
-
-    # Email notification
-    email_success = EmailOperator(
-        task_id='email_success',
-        to='gandooriimran360@gmail.com',
-        subject='Fakestore Glue DAG Success',
-        html_content='Fakestore Glue processing DAG has completed successfully!',
-    )
-
-    # DAG flow
-    holiday_check >> [skip_task, wait_for_fakestore_ingestion]
-    wait_for_fakestore_ingestion >> glue_user_extract >> glue_product_data >> glue_cart_clean >> email_success
-    skip_task >> email_success
