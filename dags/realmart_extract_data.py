@@ -1,4 +1,3 @@
-
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 from datetime import datetime, timedelta
@@ -9,7 +8,7 @@ import boto3
 from botocore.exceptions import ClientError, NoCredentialsError, EndpointConnectionError
 
 # --------------------------
-# CONFIGURATION (fixed values)
+# CONFIGURATION
 # --------------------------
 ENDPOINTS = {
     "products": "https://fakestoreapi.com/products",
@@ -49,10 +48,6 @@ def fetch_and_upload(dataset_name, api_url):
             raise Exception(f"API returned status {response.status} for {dataset_name}")
 
         data = json.loads(response.data.decode("utf-8"))
-
-        if not isinstance(data, list):
-            raise ValueError(f"{dataset_name} API did not return a list")
-
         logger.info(f"Fetched {len(data)} {dataset_name} records")
 
         # Upload to S3
@@ -92,7 +87,7 @@ with DAG(
     dag_id="fakestore_ingestion_dag",
     default_args=default_args,
     description="Ingest products, carts, and users from Fakestore API into S3",
-    schedule_interval="0 1 * * *",  # run daily at 1 AM
+    schedule_interval=None,  # Manual trigger only
     tags=["fakestore", "s3", "ingestion"],
 ) as dag:
 
@@ -105,5 +100,5 @@ with DAG(
         )
         tasks.append(task)
 
-    # simple parallel execution
+    # Run tasks in parallel
     tasks
