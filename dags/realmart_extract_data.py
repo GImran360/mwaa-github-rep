@@ -36,18 +36,44 @@ http = urllib3.PoolManager()
 def fetch_and_upload(dataset_name, api_url):
     try:
         logger.info(f"Fetching {dataset_name} from {api_url}")
+
+        # Step 1: Authenticate
+        auth_url = "https://fakestoreapi.com/auth/login"
+        auth_payload = json.dumps({
+            "username": 'String',
+            "password": 'String'
+        })
+        auth_response = http.request(
+            "POST",
+            auth_url,
+            body=auth_payload,
+            headers={"Content-Type": "application/json"}
+        )
+
+        if auth_response.status != 200:
+            raise Exception(f"Auth failed with status {auth_response.status}")
+
+        token = json.loads(auth_response.data.decode("utf-8"))["token"]
+
+        # Step 2: GET data with token
         response = http.request(
             "GET",
             api_url,
             headers={
                 "User-Agent": "Mozilla/5.0 (compatible; Airflow DAG)",
-                "Accept": "application/json"
+                "Accept": "application/json",
+                "Authorization": f"Bearer {token}"
             }
         )
+
         if response.status != 200:
             raise Exception(f"API returned status {response.status} for {dataset_name}")
 
         data = json.loads(response.data.decode("utf-8"))
+
+        if not isinstance(data, list):
+            raise ValueError(f"{dataset_name} API did not return a list")
+
         logger.info(f"Fetched {len(data)} {dataset_name} records")
 
         # Upload to S3
@@ -67,38 +93,3 @@ def fetch_and_upload(dataset_name, api_url):
     except (ClientError, NoCredentialsError, EndpointConnectionError, Exception) as e:
         logger.error(f"Error processing {dataset_name}: {e}")
         raise
-
-# --------------------------
-# DEFAULT ARGS
-# --------------------------
-default_args = {
-    "owner": "airflow",
-    "depends_on_past": False,
-    "retries": 2,
-    "retry_delay": timedelta(minutes=5),
-    "start_date": datetime(2025, 9, 1),
-    "catchup": False
-}
-
-# --------------------------
-# DAG DEFINITION
-# --------------------------
-with DAG(
-    dag_id="fakestore_ingestion_dag",
-    default_args=default_args,
-    description="Ingest products, carts, and users from Fakestore API into S3",
-    schedule_interval=None,  # Manual trigger only
-    tags=["fakestore", "s3", "ingestion"],
-) as dag:
-
-    tasks = []
-    for dataset_name, api_url in ENDPOINTS.items():
-        task = PythonOperator(
-            task_id=f"ingest_{dataset_name}",
-            python_callable=fetch_and_upload,
-            op_args=[dataset_name, api_url],
-        )
-        tasks.append(task)
-
-    # Run tasks in parallel
-    tasks
