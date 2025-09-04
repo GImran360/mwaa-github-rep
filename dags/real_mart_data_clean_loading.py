@@ -64,21 +64,21 @@ with DAG(
         task_id='glue_job_cart_clean',
         job_name='Realmart-cart_clean_data_Store',
         iam_role_name='realmart-iam-role',
-        region_name='us-east-1'
+        region_name='ap-southeast-2'
     )
 
     glue_job_store = AwsGlueJobOperator(
         task_id='glue_job_store',
         job_name='Realmart-Store',
         iam_role_name='realmart-iam-role',
-        region_name='us-east-1'
+        region_name='ap-southeast-2'
     )
 
     glue_job_user_extract = AwsGlueJobOperator(
         task_id='glue_job_user_extract',
         job_name='Real-mart-user_data_extract',
         iam_role_name='realmart-iam-role',
-        region_name='us-east-1'
+        region_name='ap-southeast-2'
     )
 
     # Email on success
