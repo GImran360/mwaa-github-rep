@@ -1,23 +1,23 @@
 from airflow import DAG
-from airflow.operators.bash import BashOperator
 from airflow.operators.python import PythonOperator
 from datetime import datetime, timedelta
-import boto3
 import json
-import csv
-from io import StringIO
 import logging
+import boto3
+import requests
+from botocore.exceptions import ClientError, NoCredentialsError, EndpointConnectionError
 
 # --------------------------
 # CONFIGURATION
 # --------------------------
-BUCKET_NAME = "realmart-backbone"
-RAW_PREFIX = "raw_data/to_processed"
-DATASETS = {
+ENDPOINTS = {
     "products": "https://fakestoreapi.com/products",
     "carts": "https://fakestoreapi.com/carts",
     "users": "https://fakestoreapi.com/users",
 }
+
+BUCKET_NAME = "realmart-backbone"
+RAW_PREFIX = "raw_data/to_processed"
 
 # --------------------------
 # LOGGING SETUP
@@ -29,44 +29,56 @@ logging.basicConfig(
 logger = logging.getLogger()
 
 # --------------------------
-# FUNCTION TO UPLOAD CSV TO S3
+# FETCH DATA FROM API
 # --------------------------
-def upload_csv_to_s3(file_path, dataset_name):
+def fetch_and_upload(dataset_name, api_url):
     try:
-        with open(file_path, "r") as f:
-            data = json.load(f)
+        logger.info(f"Fetching {dataset_name} from {api_url}")
+        try:
+            response = requests.get(
+                api_url,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (compatible; Airflow DAG)",
+                    "Accept": "application/json"
+                },
+                timeout=80
+            )
+            response.raise_for_status()
+        except requests.exceptions.RequestException as req_err:
+            logger.error(f"Request error for {dataset_name}: {req_err}")
+            return  # exit without failing DAG
 
-        if not isinstance(data, list) or len(data) == 0:
-            logger.warning(f"No data found for {dataset_name}, skipping upload.")
+        try:
+            data = response.json()
+        except json.JSONDecodeError:
+            logger.error(f"Invalid JSON received for {dataset_name}")
+            return  # exit without failing DAG
+
+        if not isinstance(data, list):
+            logger.warning(f"{dataset_name} API did not return a list")
             return
 
-        # Determine CSV headers from the first record
-        headers = list(data[0].keys())
-
-        # Convert JSON to CSV in-memory
-        csv_buffer = StringIO()
-        writer = csv.DictWriter(csv_buffer, fieldnames=headers)
-        writer.writeheader()
-        for row in data:
-            writer.writerow(row)
+        logger.info(f"Fetched {len(data)} {dataset_name} records")
 
         # Upload to S3
         now = datetime.utcnow()
-        file_name = f"{dataset_name}_{now.strftime('%Y%m%d_%H%M%S')}.csv"
+        file_name = f"{dataset_name}_{now.strftime('%Y%m%d_%H%M%S')}.json"
         s3_key = f"{RAW_PREFIX}/{dataset_name}/{file_name}"
 
-        s3 = boto3.client("s3")
-        s3.put_object(
-            Bucket=BUCKET_NAME,
-            Key=s3_key,
-            Body=csv_buffer.getvalue(),
-            ContentType="text/csv"
-        )
-        logger.info(f"Uploaded {dataset_name} CSV to s3://{BUCKET_NAME}/{s3_key}")
+        try:
+            s3 = boto3.client("s3")
+            s3.put_object(
+                Bucket=BUCKET_NAME,
+                Key=s3_key,
+                Body=json.dumps(data, indent=2),
+                ContentType="application/json"
+            )
+            logger.info(f"Uploaded {len(data)} {dataset_name} records to s3://{BUCKET_NAME}/{s3_key}")
+        except (ClientError, NoCredentialsError, EndpointConnectionError) as s3_err:
+            logger.error(f"S3 upload error for {dataset_name}: {s3_err}")
 
     except Exception as e:
-        logger.error(f"Failed to upload {dataset_name} CSV: {e}")
-        raise
+        logger.error(f"Unexpected error for {dataset_name}: {e}")
 
 # --------------------------
 # DEFAULT ARGS
@@ -74,7 +86,7 @@ def upload_csv_to_s3(file_path, dataset_name):
 default_args = {
     "owner": "airflow",
     "depends_on_past": False,
-    "retries": 1,
+    "retries": 2,
     "retry_delay": timedelta(minutes=5),
     "start_date": datetime(2025, 9, 1),
     "catchup": False
@@ -84,25 +96,21 @@ default_args = {
 # DAG DEFINITION
 # --------------------------
 with DAG(
-    dag_id="fakestore_ingestion_s3_csv_dag",
+    dag_id="fakestore_ingestion_requests_safe_dag",
     default_args=default_args,
-    description="Fetch Fakestore JSON via curl and upload CSV to S3",
+    description="Ingest products, carts, and users from Fakestore API into S3 using requests (no DAG fail)",
     schedule_interval="0 1 * * *",
     tags=["fakestore", "s3", "ingestion"],
 ) as dag:
 
-    for dataset_name, url in DATASETS.items():
-        # Download JSON
-        download_task = BashOperator(
-            task_id=f"download_{dataset_name}",
-            bash_command=f"curl -L {url} -o /tmp/{dataset_name}.json"
+    tasks = []
+    for dataset_name, api_url in ENDPOINTS.items():
+        task = PythonOperator(
+            task_id=f"ingest_{dataset_name}",
+            python_callable=fetch_and_upload,
+            op_args=[dataset_name, api_url],
         )
+        tasks.append(task)
 
-        # Upload CSV
-        upload_task = PythonOperator(
-            task_id=f"upload_{dataset_name}_csv_s3",
-            python_callable=upload_csv_to_s3,
-            op_args=[f"/tmp/{dataset_name}.json", dataset_name],
-        )
-
-        download_task >> upload_task
+    # parallel execution
+    tasks
