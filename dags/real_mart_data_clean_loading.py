@@ -1,8 +1,7 @@
 from airflow import DAG
 from airflow.utils.dates import days_ago
 from airflow.sensors.external_task import ExternalTaskSensor
-from airflow.providers.amazon.aws.operators.glue import AwsGlueJobOperator
-from airflow.contrib.operators.aws_glue_job_operator import AwsGlueJobOperator
+
 from airflow.providers.amazon.aws.operators.glue import AwsGlueJobOperator
 
 from airflow.operators.python import BranchPythonOperator
