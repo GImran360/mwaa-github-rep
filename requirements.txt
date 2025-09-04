@@ -1,4 +1,6 @@
 spotipy
 pandas
 boto3
+apache-airflow-providers-amazon>=5.0.0
+
 
