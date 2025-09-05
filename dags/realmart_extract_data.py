@@ -2,12 +2,16 @@ from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 from datetime import datetime, timedelta
-import requests
 import json
 import logging
 import boto3
 import time
 import random
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+import os
+import requests
 
 # --------------------------
 # CONFIG
@@ -42,35 +46,38 @@ default_args = {
 # FUNCTION TO FETCH & UPLOAD
 # --------------------------
 def fetch_and_upload(dataset_name, api_url, **kwargs):
-    # Use a standard browser User-Agent and add a Referer header
-    # to mimic a real browser request more closely.
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-        "Referer": "https://www.google.com/",  # Add a common referer
-        "Accept": "application/json",
-        "Connection": "keep-alive"
-    }
-
-    # Add a small delay between attempts to avoid hitting rate limits
-    if kwargs.get('task_instance').try_number > 1:
-        delay_time = random.uniform(1, 3)
-        logger.info(f"[{dataset_name}] Delaying for {delay_time:.2f}s before next attempt...")
-        time.sleep(delay_time)
+    # Setup Chrome options for headless mode
+    chrome_options = Options()
+    chrome_options.add_argument("--headless")
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    
+    # Path to the ChromeDriver executable
+    # Assumes chromedriver is in the path or the current directory
+    service = Service()
+    
+    driver = None
+    data = None
 
     for attempt in range(5):
         try:
-            logger.info(f"[{dataset_name}] Attempt {attempt+1}: Fetching from {api_url}")
-            response = requests.get(api_url, headers=headers, timeout=30)
+            logger.info(f"[{dataset_name}] Attempt {attempt+1}: Fetching from {api_url} using Selenium")
+            
+            # Initialize a new driver for each attempt to ensure a clean state
+            driver = webdriver.Chrome(service=service, options=chrome_options)
+            driver.get(api_url)
+            
+            # The API returns a simple JSON, which is a part of the body.
+            # We can get the text content directly.
+            page_source = driver.page_source
+            
+            # The data is inside a <pre> tag. We need to extract it.
+            pre_tag = driver.find_element_by_tag_name("pre")
+            data_text = pre_tag.text
 
-            if response.status_code == 403:
-                wait_time = (2 ** attempt) + random.uniform(0, 1)
-                logger.warning(f"[{dataset_name}] 403 Forbidden. Retrying in {wait_time:.1f}s...")
-                time.sleep(wait_time)
-                continue
-
-            response.raise_for_status()
-
-            data = response.json()
+            # Parse the text as JSON
+            data = json.loads(data_text)
+            
             if not isinstance(data, list):
                 raise ValueError(f"[{dataset_name}] API did not return a list")
 
@@ -86,12 +93,16 @@ def fetch_and_upload(dataset_name, api_url, **kwargs):
                 ContentType="application/json"
             )
             logger.info(f"[{dataset_name}] ✅ Uploaded {len(data)} records to s3://{BUCKET_NAME}/{s3_key}")
-            return
+            return # Success, exit the function
 
         except Exception as e:
             wait_time = (2 ** attempt) + random.uniform(0, 1)
             logger.error(f"[{dataset_name}] Error: {e}. Retrying in {wait_time:.1f}s...")
             time.sleep(wait_time)
+            
+        finally:
+            if driver:
+                driver.quit() # Always close the driver to free up resources
 
     # If all retries fail, save error response to S3 for debugging
     error_key = f"{RAW_PREFIX}/errors/{dataset_name}_error_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.json"
@@ -99,7 +110,7 @@ def fetch_and_upload(dataset_name, api_url, **kwargs):
     s3.put_object(
         Bucket=BUCKET_NAME,
         Key=error_key,
-        Body=json.dumps({"dataset": dataset_name, "error": "403 Forbidden or API failure"}, indent=2),
+        Body=json.dumps({"dataset": dataset_name, "error": "Permanent API failure with Selenium"}, indent=2),
         ContentType="application/json"
     )
     logger.error(f"[{dataset_name}] ❌ Failed after retries. Error saved at s3://{BUCKET_NAME}/{error_key}")
@@ -111,9 +122,9 @@ def fetch_and_upload(dataset_name, api_url, **kwargs):
 with DAG(
     dag_id="fakestore_ingestion_requests_dag",
     default_args=default_args,
-    description="Ingest products, carts, and users from Fakestore API into S3 using requests",
+    description="Ingest products, carts, and users from Fakestore API into S3 using Selenium",
     schedule_interval="0 1 * * *",
-    tags=["fakestore", "s3", "ingestion"],
+    tags=["fakestore", "s3", "ingestion", "selenium"],
 ) as dag:
 
     tasks = []
