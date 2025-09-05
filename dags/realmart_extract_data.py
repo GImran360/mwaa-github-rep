@@ -6,6 +6,8 @@ import requests
 import json
 import logging
 import boto3
+import time
+import random
 
 # --------------------------
 # CONFIG
@@ -28,8 +30,10 @@ logger = logging.getLogger()
 default_args = {
     "owner": "airflow",
     "depends_on_past": False,
-    "retries": 2,
-    "retry_delay": timedelta(minutes=5),
+    "retries": 5,  # more retries for 403
+    "retry_delay": timedelta(minutes=2),
+    "retry_exponential_backoff": True,
+    "max_retry_delay": timedelta(minutes=30),
     "start_date": datetime(2025, 9, 1),
     "catchup": False
 }
@@ -38,28 +42,60 @@ default_args = {
 # FUNCTION TO FETCH & UPLOAD
 # --------------------------
 def fetch_and_upload(dataset_name, api_url, **kwargs):
-    try:
-        logger.info(f"Fetching {dataset_name} from {api_url}")
-        response = requests.get(api_url, headers={"User-Agent": "Airflow DAG", "Accept": "application/json"})
-        if response.status_code != 200:
-            logger.warning(f"Request error for {dataset_name}: {response.status_code} {response.reason}")
-            return  # gracefully handle error without failing DAG
+    headers = {
+        "User-Agent": f"Mozilla/5.0 (AirflowBot/{dataset_name})",
+        "Accept": "application/json",
+        "Connection": "keep-alive"
+    }
 
-        data = response.json()
-        if not isinstance(data, list):
-            logger.warning(f"{dataset_name} API did not return a list")
-            return
+    for attempt in range(5):  # manual retry loop (inside task)
+        try:
+            logger.info(f"[{dataset_name}] Attempt {attempt+1}: Fetching from {api_url}")
+            response = requests.get(api_url, headers=headers, timeout=30)
 
-        now = datetime.utcnow()
-        file_name = f"{dataset_name}_{now.strftime('%Y%m%d_%H%M%S')}.json"
-        s3_key = f"{RAW_PREFIX}/{dataset_name}/{file_name}"
+            # Handle Forbidden explicitly
+            if response.status_code == 403:
+                wait_time = (2 ** attempt) + random.uniform(0, 1)  # exponential backoff + jitter
+                logger.warning(f"[{dataset_name}] 403 Forbidden. Retrying in {wait_time:.1f}s...")
+                time.sleep(wait_time)
+                continue
 
-        s3 = boto3.client("s3")
-        s3.put_object(Bucket=BUCKET_NAME, Key=s3_key, Body=json.dumps(data, indent=2), ContentType="application/json")
-        logger.info(f"Uploaded {dataset_name} data to s3://{BUCKET_NAME}/{s3_key}")
+            response.raise_for_status()  # raise error for other 4xx/5xx
 
-    except Exception as e:
-        logger.error(f"Error processing {dataset_name}: {e}")
+            data = response.json()
+            if not isinstance(data, list):
+                raise ValueError(f"[{dataset_name}] API did not return a list")
+
+            now = datetime.utcnow()
+            file_name = f"{dataset_name}_{now.strftime('%Y%m%d_%H%M%S')}.json"
+            s3_key = f"{RAW_PREFIX}/{dataset_name}/{file_name}"
+
+            s3 = boto3.client("s3")
+            s3.put_object(
+                Bucket=BUCKET_NAME,
+                Key=s3_key,
+                Body=json.dumps(data, indent=2),
+                ContentType="application/json"
+            )
+            logger.info(f"[{dataset_name}] ✅ Uploaded {len(data)} records to s3://{BUCKET_NAME}/{s3_key}")
+            return  # success → exit function
+
+        except Exception as e:
+            wait_time = (2 ** attempt) + random.uniform(0, 1)
+            logger.error(f"[{dataset_name}] Error: {e}. Retrying in {wait_time:.1f}s...")
+            time.sleep(wait_time)
+
+    # If all retries fail, save error response to S3 for debugging
+    error_key = f"{RAW_PREFIX}/errors/{dataset_name}_error_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.json"
+    s3 = boto3.client("s3")
+    s3.put_object(
+        Bucket=BUCKET_NAME,
+        Key=error_key,
+        Body=json.dumps({"dataset": dataset_name, "error": "403 Forbidden or API failure"}, indent=2),
+        ContentType="application/json"
+    )
+    logger.error(f"[{dataset_name}] ❌ Failed after retries. Error saved at s3://{BUCKET_NAME}/{error_key}")
+    raise Exception(f"{dataset_name} ingestion failed permanently after retries")
 
 # --------------------------
 # DAG DEFINITION
@@ -81,12 +117,10 @@ with DAG(
         )
         tasks.append(task)
 
-    # Trigger next DAG automatically after all datasets are ingested
     trigger_glue_dag = TriggerDagRunOperator(
         task_id="trigger_glue_dag",
         trigger_dag_id="fakestore_glue_processing_dag",  # replace with your second DAG id
         wait_for_completion=False
     )
 
-    # Set dependencies
     tasks >> trigger_glue_dag
