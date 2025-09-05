@@ -6,6 +6,7 @@ from airflow.providers.amazon.aws.sensors.s3 import S3KeySensor
 from airflow.providers.amazon.aws.operators.glue import GlueJobOperator
 
 
+
 default_args = {
     "owner": "imrang",  # 🔧 Fixed typo from "owener"
     "depends_on_past": False,
@@ -65,3 +66,4 @@ with DAG(
 #trigger_extract_lambda >> check_s3_upload >>trigger_transform_load
 
 trigger_extract_lambda >> check_s3_upload >>trigger_glue_job
+
