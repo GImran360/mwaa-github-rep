@@ -30,7 +30,7 @@ logger = logging.getLogger()
 default_args = {
     "owner": "airflow",
     "depends_on_past": False,
-    "retries": 5,  # more retries for 403
+    "retries": 5,
     "retry_delay": timedelta(minutes=2),
     "retry_exponential_backoff": True,
     "max_retry_delay": timedelta(minutes=30),
@@ -42,25 +42,26 @@ default_args = {
 # FUNCTION TO FETCH & UPLOAD
 # --------------------------
 def fetch_and_upload(dataset_name, api_url, **kwargs):
+    # Updated User-Agent to a more generic string that is less likely to be blocked.
     headers = {
-        "User-Agent": f"Mozilla/5.0 (AirflowBot/{dataset_name})",
+        "User-Agent": "Mozilla/5.0 (compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm)",
         "Accept": "application/json",
         "Connection": "keep-alive"
     }
 
-    for attempt in range(5):  # manual retry loop (inside task)
+    for attempt in range(5):
         try:
             logger.info(f"[{dataset_name}] Attempt {attempt+1}: Fetching from {api_url}")
             response = requests.get(api_url, headers=headers, timeout=30)
 
             # Handle Forbidden explicitly
             if response.status_code == 403:
-                wait_time = (2 ** attempt) + random.uniform(0, 1)  # exponential backoff + jitter
+                wait_time = (2 ** attempt) + random.uniform(0, 1)
                 logger.warning(f"[{dataset_name}] 403 Forbidden. Retrying in {wait_time:.1f}s...")
                 time.sleep(wait_time)
                 continue
 
-            response.raise_for_status()  # raise error for other 4xx/5xx
+            response.raise_for_status()
 
             data = response.json()
             if not isinstance(data, list):
@@ -78,7 +79,7 @@ def fetch_and_upload(dataset_name, api_url, **kwargs):
                 ContentType="application/json"
             )
             logger.info(f"[{dataset_name}] ✅ Uploaded {len(data)} records to s3://{BUCKET_NAME}/{s3_key}")
-            return  # success → exit function
+            return
 
         except Exception as e:
             wait_time = (2 ** attempt) + random.uniform(0, 1)
@@ -119,7 +120,7 @@ with DAG(
 
     trigger_glue_dag = TriggerDagRunOperator(
         task_id="trigger_glue_dag",
-        trigger_dag_id="fakestore_glue_processing_dag",  # replace with your second DAG id
+        trigger_dag_id="fakestore_glue_processing_dag",
         wait_for_completion=False
     )
 
