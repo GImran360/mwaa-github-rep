@@ -19,6 +19,7 @@ with DAG(
         job_name="glue_user_extract",
         script_location="s3://aws-glue-assets-258208867389-ap-southeast-2/scripts/Real-mart-user_data_extract.py",
         region_name="ap-southeast-2",
+        iam_role_name="arn:aws:iam::258208867389:role/airflow_iam_role",
         num_of_dpus=2,
     )
     run_glue_job
