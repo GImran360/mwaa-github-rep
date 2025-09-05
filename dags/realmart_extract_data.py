@@ -42,19 +42,26 @@ default_args = {
 # FUNCTION TO FETCH & UPLOAD
 # --------------------------
 def fetch_and_upload(dataset_name, api_url, **kwargs):
-    # Updated User-Agent to a more generic string that is less likely to be blocked.
+    # Use a standard browser User-Agent and add a Referer header
+    # to mimic a real browser request more closely.
     headers = {
-        "User-Agent": "Mozilla/5.0 (compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm)",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+        "Referer": "https://www.google.com/",  # Add a common referer
         "Accept": "application/json",
         "Connection": "keep-alive"
     }
+
+    # Add a small delay between attempts to avoid hitting rate limits
+    if kwargs.get('task_instance').try_number > 1:
+        delay_time = random.uniform(1, 3)
+        logger.info(f"[{dataset_name}] Delaying for {delay_time:.2f}s before next attempt...")
+        time.sleep(delay_time)
 
     for attempt in range(5):
         try:
             logger.info(f"[{dataset_name}] Attempt {attempt+1}: Fetching from {api_url}")
             response = requests.get(api_url, headers=headers, timeout=30)
 
-            # Handle Forbidden explicitly
             if response.status_code == 403:
                 wait_time = (2 ** attempt) + random.uniform(0, 1)
                 logger.warning(f"[{dataset_name}] 403 Forbidden. Retrying in {wait_time:.1f}s...")
