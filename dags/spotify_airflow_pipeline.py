@@ -37,19 +37,19 @@ def _upload_to_s3(**context):
     filename = ti.xcom_pull(task_ids='fetch_spotify_data', key='spotify_filename')
     data = ti.xcom_pull(task_ids='fetch_spotify_data', key='spotify_data')
 
-    s3 = S3Hook(aws_conn_id='aws_s3_spotify')
+    s3 = S3Hook(aws_conn_id='aws_spotify_etl')
     s3_key = f"raw_data/to_processed/{filename}"
     s3.load_string(
         string_data=data,
         key=s3_key,
-        bucket_name="spotify-etl-project-imrang",
+        bucket_name="spotify-etl-project-imrang1",
         replace=True
     )
     print(f"Uploaded to S3: {s3_key}")
 
 def _read_data_from_S3(**kwargs):
     s3_hook = S3Hook(aws_conn_id="aws_s3_spotify")
-    bucket_name = "spotify-etl-project-imrang"
+    bucket_name = "spotify-etl-project-imrang1"
     prefix = "raw_data/to_processed/"
 
     keys = s3_hook.list_keys(bucket_name=bucket_name, prefix=prefix)
@@ -250,4 +250,5 @@ process_songs >> store_songs_to_s3
 store_album_to_s3 >> move_proccessed_data
 store_artist_to_s3 >> move_proccessed_data
 store_songs_to_s3 >> move_proccessed_data
+
 
