@@ -1,8 +1,6 @@
 pandas
 pymysql
 boto3
-
-
 spotipy
 # ------------------------
 # API & HTTP Clients
