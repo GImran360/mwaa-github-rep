@@ -37,8 +37,8 @@ wait_for_new_file = S3KeySensor(
 # Glue Job Operator
 run_glue_job = GlueJobOperator(
     task_id='run_airplane_glue_job',
-    job_name='airplane_raw_to_processed_analytics_job',
-    script_location='s3://aws-glue-assets-258208867389-ap-southeast-2/scripts/airplane_raw_to_processed_analytics_job.py',
+    job_name='airplane-sensors-data_etl_gue_job',
+    script_location='s3://aws-glue-assets-258208867389-ap-southeast-2/scripts/airplane-sensors-data_etl_gue_job.py',
     iam_role_name='arn:aws:iam::258208867389:role/imrang-all-iam-role',
     region_name='ap-southeast-2',
     num_of_dpus=10,
