@@ -29,7 +29,7 @@ with DAG(
         script_location="s3://aws-glue-assets-258208867389-ap-southeast-2/scripts/realmart_etl_clean_analytics.py",
         iam_role_name="arn:aws:iam::258208867389:role/imrang-all-iam-role",
         region_name="ap-southeast-2",  # Sydney region
-        num_of_dpus=2,
+        #num_of_dpus=2,
         create_job_kwargs={
             "GlueVersion": "3.0",   # or "4.0" depending on your Glue job version
             "WorkerType": "G.1X",   # change if you need bigger workers
