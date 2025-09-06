@@ -41,7 +41,7 @@ with DAG(
         script_location="s3://aws-glue-assets-258208867389-ap-southeast-2/scripts/ncr_ride_bookings_analytics.py",
         iam_role_name="arn:aws:iam::258208867389:role/imrang-all-iam-role",
         region_name="ap-southeast-2",
-        num_of_dpus=2,
+        #num_of_dpus=2,
         create_job_kwargs={
             "GlueVersion": "3.0",
             "WorkerType": "G.1X",
