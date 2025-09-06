@@ -7,6 +7,7 @@ def test_pandas():
     df = pd.DataFrame({"col": [1,2,3]})
     print(df)
 
+
 with DAG(
     dag_id="test_pandas_dag",
     start_date=datetime(2025, 1, 1),
