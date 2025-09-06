@@ -9,7 +9,6 @@ import csv
 from io import StringIO
 import logging
 
-
 def export_mysql_table_to_s3(**kwargs):
     """
     Export a MySQL table to S3 as CSV.
