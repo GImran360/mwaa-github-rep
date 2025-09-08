@@ -8,7 +8,7 @@ from airflow import DAG
 from airflow.operators.python import PythonOperator
 
 # Initialize boto3 S3 client
-s3_client = boto3.client('s3')
+s3_client = boto3.client("s3")
 
 # ✅ Just the bucket name (not s3://)
 BUCKET_NAME = "airplane-sensors-data"
@@ -20,22 +20,22 @@ dag = DAG(
     catchup=False,
 )
 
-# 1️⃣ Download launches JSON → Convert → Save CSV → Upload CSV to S3
+# 1️⃣ Download JSON → Convert to CSV → Upload CSV to S3
 def _download_and_upload_csv():
     local_json = "/tmp/launches.json"
     local_csv = "/tmp/launches.csv"
 
-    # Download JSON
+    # Step 1: Download JSON
     url = "https://ll.thespacedevs.com/2.0.0/launch/upcoming"
     response = requests.get(url, timeout=15)
     response.raise_for_status()
-
-    with open(local_json, "w") as f:
-        f.write(response.text)
-
     launches = response.json()["results"]
 
-    # Convert JSON → CSV
+    # Step 2: Save JSON (optional, just for local debug)
+    with open(local_json, "w") as f:
+        json.dump(launches, f, indent=2)
+
+    # Step 3: Convert JSON → CSV
     fieldnames = ["id", "name", "window_start", "window_end", "image"]
     with open(local_csv, "w", newline="") as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
@@ -49,17 +49,20 @@ def _download_and_upload_csv():
                 "image": launch.get("image"),
             })
 
-    # Upload CSV only
+    # Step 4: Upload CSV to S3
     s3_client.upload_file(
         Filename=local_csv,
         Bucket=BUCKET_NAME,
-        Key="rocket_launches/launches.csv",
+        Key="rocket_launches/launches.csv"
     )
 
-    print(f"Uploaded launches.csv to s3://{BUCKET_NAME}/rocket_launches/launches.csv")
+    print(f"✅ Uploaded launches.csv to s3://{BUCKET_NAME}/rocket_launches/launches.csv")
 
 upload_csv = PythonOperator(
     task_id="download_and_upload_csv",
     python_callable=_download_and_upload_csv,
     dag=dag,
 )
+
+# DAG Flow (only one task here)
+upload_csv
