@@ -11,6 +11,7 @@ from botocore.exceptions import ClientError, NoCredentialsError, EndpointConnect
 # --------------------------
 # CONFIGURATION
 # --------------------------
+
 ENDPOINTS = {
     "products": "https://fakestoreapi.com/products",
     "carts": "https://fakestoreapi.com/carts",
