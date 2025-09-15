@@ -4,6 +4,7 @@ from airflow.providers.amazon.aws.operators.glue import GlueJobOperator
 from airflow.utils.dates import days_ago
 
 # Default arguments
+
 default_args = {
     "owner": "airflow",
     "depends_on_past": False,
