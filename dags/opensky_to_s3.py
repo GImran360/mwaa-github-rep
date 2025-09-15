@@ -18,6 +18,7 @@ def fetch_opensky_data():
     return response.json()
 
 # Function to save data to S3
+
 def save_to_s3():
     data = fetch_opensky_data()
     s3 = boto3.client("s3")
