@@ -7,7 +7,6 @@ import logging
 import boto3
 import random
 from botocore.exceptions import ClientError, NoCredentialsError, EndpointConnectionError
-
 # --------------------------
 # CONFIGURATION
 # --------------------------
